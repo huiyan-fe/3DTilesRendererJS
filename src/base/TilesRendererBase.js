@@ -23,7 +23,12 @@ const priorityCallback = ( a, b ) => {
 		// load shallower tiles first
 		return a.__depth > b.__depth ? - 1 : 1;
 
-	} else if ( a.__used !== b.__used ) {
+	} else if (a._foveatedFactor !== b._foveatedFactor) {
+
+		// load the tiles that closer to the point of view firstly 
+        return a._foveatedFactor > b._foveatedFactor ? -1 : 1;
+    }
+	else if ( a.__used !== b.__used ) {
 
 		// load tiles that have been used
 		return a.__used ? 1 : - 1;

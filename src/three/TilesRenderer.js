@@ -14,7 +14,8 @@ import {
 	Vector3,
 	Vector2,
 	Frustum,
-	LoadingManager
+	LoadingManager,
+	MathUtils,
 } from 'three';
 import { raycastTraverse, raycastTraverseFirstHit } from './raycastTraverse.js';
 import { readMagicBytes } from '../utilities/readMagicBytes.js';
@@ -87,6 +88,9 @@ export class TilesRenderer extends TilesRendererBase {
 		this.dynamicScreenSpaceErrorHeightFalloff = 0.25; /** 密度开始下降的tileset的高度的比率 */
 		this.dynamicScreenHeightScale = 6; /** 最大高度缩放 */
 		this.dynamicScreenSpaceErrorDensity = 0.00278; /** 用于调整动态屏幕空间误差的密度 */
+		this.foveatedScreenSpaceError = false;
+		this.foveatedConeSize = 0.3;
+		this.foveatedTimeDelay = 0.2;
 
 		const manager = new LoadingManager();
 		manager.setURLModifier( url => {
@@ -682,6 +686,71 @@ export class TilesRenderer extends TilesRendererBase {
 
 	}
 
+	updateFoveatedFactor( tile ) {
+
+		const distance = this.distanceToTileCenter( tile );
+		const priorityDeferred = this.isPriorityDeferred( tile, distance );
+		tile.priorityDeferred = priorityDeferred;
+
+	}
+
+	/**
+	 * 计算瓦片的foveatedFactor（反映距离相机聚焦点的远近
+	 * 距离相机聚焦点越近值越小）大小和是否需要延迟瓦片加载
+	 */
+	isPriorityDeferred( tile, distance ) {
+
+		if ( ! this.foveatedScreenSpaceError || this.foveatedConeSize === 1 ) {
+
+			return false;
+
+		}
+
+		const { radius, center } = tile.cached.sphere;
+
+		const info = this.cameraInfo[ 0 ];
+		const { directionWC, position } = info;
+
+		const scaledCameraDirection = directionWC.clone().multiplyScalar( distance );
+		const toLine = position.clone().add( scaledCameraDirection ).sub( center );
+		// const toLine = closestPointOnLine.clone().sub( center );
+
+		const distanceToCenterLIne = toLine.length();
+		const notTouchingSphere = distanceToCenterLIne > radius;
+
+		if ( notTouchingSphere ) {
+
+			const toLineNormalized = toLine.normalize();
+			const scaledToLine = toLineNormalized.multiplyScalar( radius );
+			const closestOnSphere = scaledToLine.add( center );
+			const toClosestOnSphere = closestOnSphere.sub( position );
+			const toClosestOnSphereNormalize = toClosestOnSphere.normalize();
+			tile._foveatedFactor = 1 - Math.abs( directionWC.dot( toClosestOnSphereNormalize ) );
+
+		} else {
+
+			tile._foveatedFactor = 0;
+
+		}
+
+		const maximumFovatedFactor = 1.0 - Math.cos( this.cameras[ 0 ].fov * 0.5 );
+		const foveatedConeFactor = this.foveatedConeSize * maximumFovatedFactor;
+
+		if ( tile._foveatedFactor <= foveatedConeFactor ) {
+
+			return false;
+
+		}
+
+		const range = maximumFovatedFactor - foveatedConeFactor;
+		const normalizedFoveatedFactor = MathUtils.clamp( ( tile._foveatedFactor - foveatedConeFactor ) / range, 0, 1 );
+
+		const sseRelaxation = MathUtils.lerp( 0, this.errorTarget, normalizedFoveatedFactor );
+
+		return ( this.errorTarget - sseRelaxation ) <= tile.__error;
+
+	}
+
 	parseTile( buffer, tile, extension ) {
 
 		tile._loadIndex = tile._loadIndex || 0;
@@ -1059,6 +1128,8 @@ export class TilesRenderer extends TilesRendererBase {
 
 	calculateError( tile ) {
 
+		this.updateFoveatedFactor( tile );
+
 		const cached = tile.cached;
 		const inFrustum = cached.inFrustum;
 		const cameras = this.cameras;
@@ -1138,6 +1209,13 @@ export class TilesRenderer extends TilesRendererBase {
 
 		tile.__distanceFromCamera = minDistance;
 		tile.__error = maxError;
+
+	}
+
+	fogDensity( distanceToCamera, density ) {
+
+		const scalar = distanceToCamera * density;
+		return 1.0 - Math.exp( - ( scalar * scalar ) );
 
 	}
 
