@@ -13,15 +13,15 @@ import { UNLOADED, LOADING, PARSING, LOADED, FAILED } from './constants.js';
  */
 const priorityCallback = ( a, b ) => {
 
-	if ( a.__depth !== b.__depth ) {
-
-		// load shallower tiles first
-		return a.__depth > b.__depth ? - 1 : 1;
-
-	} else if ( a.__inFrustum !== b.__inFrustum ) {
+	if ( a.__inFrustum !== b.__inFrustum ) {
 
 		// load tiles that are in the frustum at the current depth
 		return a.__inFrustum ? 1 : - 1;
+
+	} else if ( a.__depth !== b.__depth ) {
+
+		// load shallower tiles first
+		return a.__depth > b.__depth ? - 1 : 1;
 
 	} else if ( a.__used !== b.__used ) {
 
@@ -87,6 +87,8 @@ export class TilesRendererBase {
 
 		const lruCache = new LRUCache();
 		lruCache.unloadPriorityCallback = lruPriorityCallback;
+		// 使用shadre callback
+		lruCache.unloadTile = this.getUnloadTileCallBack();
 
 		const downloadQueue = new PriorityQueue();
 		downloadQueue.maxJobs = 4;
@@ -120,6 +122,52 @@ export class TilesRendererBase {
 
 	}
 
+	getUnloadTileCallBack( ) {
+
+		return ( tile ) => {
+
+			const isExternalTileSet = tile.__externalTileSet;
+
+			if ( tile.__loadingState === LOADING ) {
+
+				tile.__loadAbort.abort();
+				tile.__loadAbort = null;
+
+			} else if ( isExternalTileSet ) {
+
+				tile.children.length = 0;
+
+			} else {
+
+				this.disposeTile( tile );
+
+			}
+
+			// Decrement stats
+			if ( tile.__loadingState === LOADING ) {
+
+				this.stats.downloading --;
+
+			} else if ( tile.__loadingState === PARSING ) {
+
+				this.stats.parsing --;
+
+			}
+
+			tile.__loadingState = UNLOADED;
+			tile.__loadIndex ++;
+
+			const byteLength = tile.byteLength || 0;
+			console.log( 'bytelength', byteLength );
+			this.stats.cacheBytes -= byteLength;
+
+			this.parseQueue.remove( tile );
+			this.downloadQueue.remove( tile );
+
+		};
+
+	}
+
 	traverse( beforecb, aftercb ) {
 
 		const tileSets = this.tileSets;
@@ -149,6 +197,7 @@ export class TilesRendererBase {
 		}
 
 		const root = rootTileSet.root;
+		this.updateDynamicScreenSpaceError( root );
 
 		stats.inFrustum = 0,
 		stats.used = 0,

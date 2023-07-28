@@ -20,7 +20,6 @@ class LRUCache {
 		this.itemSet = new Map();
 		this.itemList = [];
 		this.usedSet = new Set();
-		this.callbacks = new Map();
 
 		this.unloadPriorityCallback = null;
 
@@ -33,6 +32,10 @@ class LRUCache {
 	isFull() {
 
 		return this.itemSet.size >= this.maxSize;
+
+	}
+
+	unloadTile() {
 
 	}
 
@@ -53,11 +56,9 @@ class LRUCache {
 
 		const usedSet = this.usedSet;
 		const itemList = this.itemList;
-		const callbacks = this.callbacks;
 		itemList.push( item );
 		usedSet.add( item );
 		itemSet.set( item, Date.now() );
-		callbacks.set( item, removeCb );
 
 		return true;
 
@@ -68,17 +69,15 @@ class LRUCache {
 		const usedSet = this.usedSet;
 		const itemSet = this.itemSet;
 		const itemList = this.itemList;
-		const callbacks = this.callbacks;
 
 		if ( itemSet.has( item ) ) {
 
-			callbacks.get( item )( item );
+			this.unloadTile( item );
 
 			const index = itemList.indexOf( item );
 			itemList.splice( index, 1 );
 			usedSet.delete( item );
 			itemSet.delete( item );
-			callbacks.delete( item );
 
 			return true;
 
@@ -116,7 +115,6 @@ class LRUCache {
 		const itemList = this.itemList;
 		const itemSet = this.itemSet;
 		const usedSet = this.usedSet;
-		const callbacks = this.callbacks;
 		const unused = itemList.length - usedSet.size;
 		const excess = itemList.length - targetSize;
 		const unloadPriorityCallback = this.unloadPriorityCallback || this.defaultPriorityCallback;
@@ -159,9 +157,8 @@ class LRUCache {
 			for ( let i = 0, l = removedItems.length; i < l; i ++ ) {
 
 				const item = removedItems[ i ];
-				callbacks.get( item )( item );
 				itemSet.delete( item );
-				callbacks.delete( item );
+				this.unloadTile( item );
 
 			}
 
