@@ -82,6 +82,11 @@ export class TilesRenderer extends TilesRendererBase {
 
 		this.cullRequestsWhileMoving = false;
 		this.cullRequestsWhileMovingMultiplier = 60;
+		this.dynamicScreenSpaceError = false; /** 是否开启动态屏幕误差 */
+		this.dynamicScreenSpaceErrorFactor = 4; /** 用于增加计算出的动态屏幕空间误差的因子 */
+		this.dynamicScreenSpaceErrorHeightFalloff = 0.25; /** 密度开始下降的tileset的高度的比率 */
+		this.dynamicScreenHeightScale = 6; /** 最大高度缩放 */
+		this.dynamicScreenSpaceErrorDensity = 0.00278; /** 用于调整动态屏幕空间误差的密度 */
 
 		const manager = new LoadingManager();
 		manager.setURLModifier( url => {
@@ -929,7 +934,6 @@ export class TilesRenderer extends TilesRendererBase {
 
 	}
 
-		/** begin */
 	/**
 	* 当相机移动时，通过获取移动距离与瓦片大小来防止不必要的瓦片请求。
 	* @param {*} tile
@@ -962,6 +966,55 @@ export class TilesRenderer extends TilesRendererBase {
 		return movementRatio < 1.0;
  
 	 }
+
+	/** begin */
+	updateDynamicScreenSpaceError( root ) {
+
+		if ( ! this.dynamicScreenSpaceError ) {
+
+			return;
+
+		}
+
+		let minimumHeight;
+		let maximumHeight;
+
+		// 如果cameras超过一个，处理？
+		if ( this.cameraInfo.length === 0 ) {
+
+			return;
+
+		}
+		const info = this.cameraInfo[ 0 ];
+		const { absoluteBox, sphere } = root.cached;
+		if ( absoluteBox ) {
+
+			minimumHeight = absoluteBox.min.z;
+			maximumHeight = absoluteBox.max.z;
+
+		} else {
+
+			minimumHeight = 0;
+			maximumHeight = sphere.center.z * 2;
+
+		}
+
+		const height = info.position.z;
+		const z = info.directionWC.z;
+
+		let horizonFactor = 1.0 - Math.abs( z );
+
+		const heightClose = minimumHeight + ( maximumHeight - minimumHeight ) * this.dynamicScreenSpaceErrorHeightFalloff;
+		const heightFar = maximumHeight * this.dynamicScreenHeightScale;
+
+		const t = MathUtils.clamp( ( height - heightClose ) / ( heightFar - heightClose ), 0, 1 );
+
+		horizonFactor = horizonFactor * ( 1 - t );
+
+		this._dynamicScreenSpaceErrorComputedDensity = this.dynamicScreenSpaceErrorDensity * horizonFactor;
+
+	}
+	/** end */
 
 	setTileVisible( tile, visible ) {
 
@@ -1066,6 +1119,16 @@ export class TilesRenderer extends TilesRendererBase {
 				error = tile.geometricError / ( scaledDistance * sseDenominator );
 
 				minDistance = Math.min( minDistance, scaledDistance );
+
+				if ( this.dynamicScreenSpaceError ) {
+
+					const density = this._dynamicScreenSpaceErrorComputedDensity;
+					const factor = this.dynamicScreenSpaceErrorFactor;
+					const dynamicError = this.fogDensity( distance, density ) * factor;
+
+					error -= dynamicError;
+
+				}
 
 			}
 

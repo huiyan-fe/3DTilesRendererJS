@@ -324,6 +324,12 @@ export class TilesRendererBase {
 
 	}
 
+	updateDynamicScreenSpaceError() {
+
+		return;
+
+	}
+
 	setTileActive( tile, state ) {
 
 	}
