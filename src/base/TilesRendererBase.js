@@ -318,6 +318,12 @@ export class TilesRendererBase {
 
 	}
 
+	isOnScreenLongEnough() {
+
+		return true;
+
+	}
+
 	setTileActive( tile, state ) {
 
 	}
@@ -446,6 +452,12 @@ export class TilesRendererBase {
 		// If the tile is already being loaded then don't
 		// start it again.
 		if ( tile.__loadingState !== UNLOADED ) {
+
+			return;
+
+		}
+
+		if ( ! this.isOnScreenLongEnough( tile ) ) {
 
 			return;
 

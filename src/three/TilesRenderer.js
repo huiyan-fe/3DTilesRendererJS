@@ -80,6 +80,9 @@ export class TilesRenderer extends TilesRendererBase {
 		this.onDisposeModel = null;
 		this.onTileVisibilityChange = null;
 
+		this.cullRequestsWhileMoving = false;
+		this.cullRequestsWhileMovingMultiplier = 60;
+
 		const manager = new LoadingManager();
 		manager.setURLModifier( url => {
 
@@ -359,6 +362,14 @@ export class TilesRenderer extends TilesRendererBase {
 				position: new Vector3(),
 				invScale: - 1,
 				pixelSize: 0, // used if isOrthographic:true
+				/** begin */
+				oldPosition: null,
+				positionWCDeltaMagnitude: 0,
+				lastMovedTimestamp: Date.now(),
+				positionWCDeltaMagnitudeLastFrame: 0,
+				timeSinceMoved: 0,
+				directionWC: new Vector3(),
+				/** end */
 
 			} );
 
@@ -384,6 +395,18 @@ export class TilesRenderer extends TilesRendererBase {
 			const frustum = info.frustum;
 			const position = info.position;
 			const resolution = cameraMap.get( camera );
+
+			/** begin */
+			if ( ! info.oldPosition ) {
+
+				info.oldPosition = position.clone();
+
+			} else {
+
+				info.oldPosition.copy( info.position );
+
+			}
+			/** end */
 
 			if ( resolution.width === 0 || resolution.height === 0 ) {
 
@@ -426,6 +449,25 @@ export class TilesRenderer extends TilesRendererBase {
 			position.set( 0, 0, 0 );
 			position.applyMatrix4( camera.matrixWorld );
 			position.applyMatrix4( tempMat2 );
+
+			/** begin */
+			info.positionWCDeltaMagnitudeLastFrame = info.positionWCDeltaMagnitude;
+			const delta = new Vector3().subVectors( position, info.oldPosition );
+			info.positionWCDeltaMagnitude = delta.length();
+
+			if ( info.positionWCDeltaMagnitude > 0.0 ) {
+
+				info.timeSinceMoved = 0;
+				info.lastMovedTimestamp = Date.now();
+
+			} else {
+
+				info.timeSinceMoved = Math.max( Date.now() - info.lastMovedTimestamp, 0.0 ) / 1000;
+
+			}
+
+			camera.getWorldDirection( info.directionWC );
+			/** end */
 
 		}
 
@@ -886,6 +928,40 @@ export class TilesRenderer extends TilesRendererBase {
 		tile._loadIndex ++;
 
 	}
+
+		/** begin */
+	/**
+	* 当相机移动时，通过获取移动距离与瓦片大小来防止不必要的瓦片请求。
+	* @param {*} tile
+	* @returns
+	*/
+	isOnScreenLongEnough( tile ) {
+
+		let movementRatio = 0;
+ 
+		if ( ! this.cullRequestsWhileMoving ) {
+ 
+			return true;
+ 
+		}
+ 
+		const info = this.cameraInfo[ 0 ];
+		const {
+			positionWCDeltaMagnitude,
+			positionWCDeltaMagnitudeLastFrame
+		} = info;
+ 
+		const deltaMagnitude = positionWCDeltaMagnitude !== 0.0
+			? positionWCDeltaMagnitude
+			: positionWCDeltaMagnitudeLastFrame;
+ 
+		const boundingSphere = tile.cached.sphere;
+		const diameter = Math.max( boundingSphere.radius * 2.0, 1.0 );
+		  movementRatio = Math.max( movementRatio, ( this.cullRequestsWhileMovingMultiplier * deltaMagnitude ) / diameter );
+ 
+		return movementRatio < 1.0;
+ 
+	 }
 
 	setTileVisible( tile, visible ) {
 
