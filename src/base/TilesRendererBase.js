@@ -1,7 +1,7 @@
 import { getUrlExtension } from '../utilities/urlExtension.js';
 import { LRUCache } from '../utilities/LRUCache.js';
 import { PriorityQueue } from '../utilities/PriorityQueue.js';
-import { determineFrustumSet, toggleTiles, skipTraversal, markUsedSetLeaves, traverseSet } from './traverseFunctions.js';
+import { determineFrustumSet, toggleTiles, skipTraversal, markUsedSetLeaves, traverseSet, checkChildrenWithinParent } from './traverseFunctions.js';
 import { UNLOADED, LOADING, PARSING, LOADED, FAILED } from './constants.js';
 
 /**
@@ -124,6 +124,8 @@ export class TilesRendererBase {
 		this.displayActiveTiles = false;
 		this.maxDepth = Infinity;
 		this.stopAtEmptyTiles = true;
+
+		this.cullWithChildrenBounds = false;
 
 	}
 
@@ -415,6 +417,12 @@ export class TilesRendererBase {
 					parent,
 					parent ? parent.__depth : 0,
 				);
+
+				if ( this.cullWithChildrenBounds ) {
+
+					checkChildrenWithinParent( tile );
+
+				}
 
 				return json;
 

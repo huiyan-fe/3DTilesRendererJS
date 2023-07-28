@@ -188,6 +188,14 @@ export function determineFrustumSet( tile, renderer ) {
 		}
 
 	}
+	else if (!anyChildrenUsed && tile.refine === 'REPLACE' && tile._useOptimization && children.length > 0) {
+
+		tile.__inFrustum = false;
+		stats.inFrustum --;
+
+		return false
+
+	}
 
 	return true;
 
@@ -431,5 +439,51 @@ export function toggleTiles( tile, renderer ) {
 		}
 
 	}
+
+}
+
+// TODO - add support for regions?
+// whether children bounds are fully contained within the paren
+export function checkChildrenWithinParent( tile ) {
+
+	const children = tile.children;
+	const length = children.length;
+
+	const { absoluteBox } = tile.cached;
+
+	if ( absoluteBox ) {
+
+		tile._useOptimization = true;
+		for ( let i = 0; i < length; i ++ ) {
+
+			const child = children[ i ];
+			const { absoluteBox: childAbsoluteBox } = child;
+			if ( ! ( childAbsoluteBox ) ) {
+
+				tile._useOptimization = false;
+				break;
+
+			}
+
+			const { x: minX, y: minY, z: minZ } = absoluteBox.min;
+			const { x: maxX, y: maxY, z: maxZ } = absoluteBox.max;
+
+			const { x: childMinX, y: childMinY, z: childMinZ } = childAbsoluteBox;
+			const { x: childMaxX, y: childMaxY, z: childMaxZ } = childAbsoluteBox;
+
+			if ( ( minX > childMinX ) || ( minY > childMinY ) || ( minZ > childMinZ )
+				|| ( maxX < childMaxX ) || ( maxY < childMaxY ) || ( maxZ < childMaxZ )
+			) {
+
+				tile._useOptimization = false;
+				break;
+
+			}
+
+		}
+
+	}
+
+	return tile._useOptimization === true;
 
 }
