@@ -751,6 +751,28 @@ export class TilesRenderer extends TilesRendererBase {
 
 	}
 
+	distanceToTileCenter( tile ) {
+
+		const { sphere } = tile.cached;
+		let distance = Math.min();
+
+		const camera = this.cameras[ 0 ];
+
+		const toCenter = new Vector3().subVectors( sphere.center, camera.position );
+		const directionWC = new Vector3();
+		camera.getWorldDirection( directionWC );
+
+		const tempDistance = toCenter.dot( directionWC );
+		if ( tempDistance < distance ) {
+
+			distance = tempDistance;
+
+		}
+
+		return distance;
+
+	}
+
 	parseTile( buffer, tile, extension ) {
 
 		tile._loadIndex = tile._loadIndex || 0;
