@@ -456,42 +456,7 @@ export class TilesRendererBase {
 		const downloadQueue = this.downloadQueue;
 		const parseQueue = this.parseQueue;
 		const isExternalTileSet = tile.__externalTileSet;
-		lruCache.add( tile, t => {
-
-			// Stop the load if it's started
-			if ( t.__loadingState === LOADING ) {
-
-				t.__loadAbort.abort();
-				t.__loadAbort = null;
-
-			} else if ( isExternalTileSet ) {
-
-				t.children.length = 0;
-
-			} else {
-
-				this.disposeTile( t );
-
-			}
-
-			// Decrement stats
-			if ( t.__loadingState === LOADING ) {
-
-				stats.downloading --;
-
-			} else if ( t.__loadingState === PARSING ) {
-
-				stats.parsing --;
-
-			}
-
-			t.__loadingState = UNLOADED;
-			t.__loadIndex ++;
-
-			parseQueue.remove( t );
-			downloadQueue.remove( t );
-
-		} );
+		lruCache.add( tile );
 
 		// Track a new load index so we avoid the condition where this load is stopped and
 		// another begins soon after so we don't parse twice.
