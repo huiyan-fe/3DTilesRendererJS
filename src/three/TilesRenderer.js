@@ -569,7 +569,44 @@ export class TilesRenderer extends TilesRendererBase {
 
 			}
 
+			// TODO: convert to box and sphere when boundingVolume is region
+			// DebugTileRenderer is ok, bounding volumes have been showed, but models still invisible
+			// Something still broken, need to continually fix
+			if ( this._engine ) {
+
+				const min = this._engine.map.projectPointArr( [ west / Math.PI * 180, south / Math.PI * 180, minHeight ] );
+				const max = this._engine.map.projectPointArr( [ east / Math.PI * 180, north / Math.PI * 180, maxHeight ] );
+
+				const bbox = new Box3();
+				bbox.set( new Vector3( ...min ), new Vector3( ...max ) );
+				bbox.getBoundingSphere( sphere );
+				bbox.getCenter( sphere.center );
+
+				boxTransform.set(
+					1, 0, 0, sphere.center.x,
+					0, 1, 0, sphere.center.y,
+					0, 0, 1, sphere.center.z,
+					0, 0, 0, 1
+				);
+				boxTransform.premultiply( transform );
+				boxTransformInverse.copy( boxTransform ).invert();
+
+				// boxTransform.identity();
+				// boxTransform.premultiply(transform);
+				// boxTransformInverse.copy(boxTransform).invert();
+
+				bbox.applyMatrix4( boxTransformInverse );
+
+				box = bbox;
+
+			}
+
 		}
+
+		/** begin */
+		const absoluteBox = box.clone();
+		absoluteBox.applyMatrix4( boxTransform );
+		/** end */
 
 
 		tile.cached = {
@@ -581,6 +618,9 @@ export class TilesRenderer extends TilesRendererBase {
 			active: false,
 			inFrustum: [],
 
+			/** begin */
+			absoluteBox,
+			/** end */
 			box,
 			boxTransform,
 			boxTransformInverse,
@@ -980,7 +1020,23 @@ export class TilesRenderer extends TilesRendererBase {
 				// Track which camera frustums this tile is in so we can use it
 				// to ignore the error calculations for cameras that can't see it
 				const frustum = cameraInfo[ i ].frustum;
-				if ( frustum.intersectsSphere( sphere ) ) {
+				// if ( frustum.intersectsSphere( sphere ) ) {
+				// console.log(cached.absoluteBox);
+				// if (frustum.intersectsSphere(sphere) !== frustum.intersectsBox(cached.absoluteBox)) {
+				//     console.log(frustum.intersectsSphere(sphere));
+				// }
+				// if ( frustum.intersectsSphere( sphere ) ) {
+				let isIntersect = false;
+				if ( this.checkIntersectByBox ) {
+
+					isIntersect = frustum.intersectsBox( cached.absoluteBox );
+
+				} else {
+
+					isIntersect = frustum.intersectsSphere( sphere );
+
+				}
+				if ( isIntersect ) {
 
 					inView = true;
 					inFrustum[ i ] = true;
