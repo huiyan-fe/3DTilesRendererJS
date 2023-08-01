@@ -164,10 +164,6 @@ export class TilesRendererBase {
 			tile.__loadingState = UNLOADED;
 			tile.__loadIndex ++;
 
-			const byteLength = tile.byteLength || 0;
-			console.log( 'bytelength', byteLength );
-			this.stats.cacheBytes -= byteLength;
-
 			this.parseQueue.remove( tile );
 			this.downloadQueue.remove( tile );
 
