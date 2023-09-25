@@ -20,6 +20,7 @@ class LRUCache {
 		this.itemSet = new Map();
 		this.itemList = [];
 		this.usedSet = new Set();
+		this.cacheList = [];
 
 		this.unloadPriorityCallback = null;
 
@@ -100,6 +101,23 @@ class LRUCache {
 
 	}
 
+	markCache( item ) {
+
+		const cacheList = this.cacheList;
+		if ( ! cacheList.includes( item ) ) {
+
+			cacheList.push( item );
+
+		}
+
+	}
+
+	markAllUnCached () {
+
+		this.cacheList = [];
+
+	}
+
 	markAllUnused() {
 
 		this.usedSet.clear();
@@ -157,8 +175,13 @@ class LRUCache {
 			for ( let i = 0, l = removedItems.length; i < l; i ++ ) {
 
 				const item = removedItems[ i ];
-				itemSet.delete( item );
-				this.unloadTile( item );
+
+				if ( ! this.cacheList.includes( item ) ) {
+
+					itemSet.delete( item );
+					this.unloadTile( item );
+
+				}
 
 			}
 

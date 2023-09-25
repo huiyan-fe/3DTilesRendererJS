@@ -80,6 +80,7 @@ export class TilesRenderer extends TilesRendererBase {
 		this.onLoadModel = null;
 		this.onDisposeModel = null;
 		this.onTileVisibilityChange = null;
+		this.preloadCamera = null;
 
 		this.cullRequestsWhileMoving = false;
 		this.cullRequestsWhileMovingMultiplier = 60;
@@ -260,6 +261,26 @@ export class TilesRenderer extends TilesRendererBase {
 		}
 		return false;
 
+	}
+
+	setPreloadCamera( camera ) {
+		const isAdd = this.setCamera( camera );
+
+		if ( isAdd ) {
+
+			this.preloadCamera = camera;
+		
+		}
+	}
+
+	removePreloadCamera( ) {
+
+		if ( this.preloadCamera ) {
+
+			this.deleteCamera( this.preloadCamera );
+			this.preloadCamera = null;
+
+		}
 	}
 
 	setResolution( camera, xOrVec, y ) {

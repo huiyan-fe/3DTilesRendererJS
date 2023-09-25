@@ -1,7 +1,7 @@
 import { getUrlExtension } from '../utilities/urlExtension.js';
 import { LRUCache } from '../utilities/LRUCache.js';
 import { PriorityQueue } from '../utilities/PriorityQueue.js';
-import { determineFrustumSet, toggleTiles, skipTraversal, markUsedSetLeaves, traverseSet, checkChildrenWithinParent } from './traverseFunctions.js';
+import { determineFrustumSet, toggleTiles, skipTraversal, markUsedSetLeaves, traverseSet, checkChildrenWithinParent, buildContentTree, requestPriorityTiles } from './traverseFunctions.js';
 import { UNLOADED, LOADING, PARSING, LOADED, FAILED } from './constants.js';
 
 /**
@@ -127,6 +127,11 @@ export class TilesRendererBase {
 
 		this.cullWithChildrenBounds = false;
 
+		this.enabledSchedule = false;
+		this.deferOutSideFrustum = false;
+		this.cacheDepth = 8;
+		this.maxCacheChildren = 100;
+
 	}
 
 	getUnloadTileCallBack( ) {
@@ -187,6 +192,7 @@ export class TilesRendererBase {
 		const stats = this.stats;
 		const lruCache = this.lruCache;
 		const tileSets = this.tileSets;
+		const enabledSchedule = this.enabledSchedule;
 		const rootTileSet = tileSets[ this.rootURL ];
 		if ( ! ( this.rootURL in tileSets ) ) {
 
@@ -208,7 +214,12 @@ export class TilesRendererBase {
 		stats.visible = 0,
 		this.frameCount ++;
 
+		window.rootTileSet = root;
 		determineFrustumSet( root, this );
+		if ( enabledSchedule ) {
+			buildContentTree( root, this );
+			requestPriorityTiles( root, this );
+		}
 		markUsedSetLeaves( root, this );
 		skipTraversal( root, this );
 		toggleTiles( root, this );
@@ -413,12 +424,6 @@ export class TilesRendererBase {
 					parent,
 					parent ? parent.__depth : 0,
 				);
-
-				if ( this.cullWithChildrenBounds ) {
-
-					checkChildrenWithinParent( tile );
-
-				}
 
 				return json;
 
