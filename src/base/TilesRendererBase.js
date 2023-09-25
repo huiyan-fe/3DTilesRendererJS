@@ -214,7 +214,6 @@ export class TilesRendererBase {
 		stats.visible = 0,
 		this.frameCount ++;
 
-		window.rootTileSet = root;
 		determineFrustumSet( root, this );
 		if ( enabledSchedule ) {
 			buildContentTree( root, this );
