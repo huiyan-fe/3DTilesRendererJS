@@ -6,6 +6,27 @@ function isDownloadFinished( value ) {
 
 }
 
+function priorityFunction ( a, b ) {
+
+	if ( a.__inFrustum !== b.__inFrustum ) {
+
+		return a.__inFrustum ? 1 : - 1;
+
+	} 
+	else if ( a.__distanceFromCamera !== b.__distanceFromCamera ) {
+
+		return a.__distanceFromCamera > b.__distanceFromCamera ? - 1 : 1;
+
+	}
+	else if (a._foveatedFactor !== b._foveatedFactor) {
+
+		return a._foveatedFactor > b._foveatedFactor ? -1 : 1;
+	}
+
+	return 0;
+
+}
+
 // Checks whether this tile was last used on the given frame.
 function isUsedThisFrame( tile, frameCount ) {
 
@@ -170,8 +191,14 @@ export function determineFrustumSet(tile, renderer) {
 	const children = tile.children;
 	for (let i = 0; i < children.length; i++) {
 		const c = children[i];
+
+		if (tile.__externalTileSet && !isDownloadFinished(tile.__loadingState) && enabledSchedule) {
+
+			renderer.requestTileContents(tile);
 	
-		const r = scheduleTiles(c, renderer);
+		}
+	
+		const r = determineFrustumSet(c, renderer);
 		anyChildrenUsed = anyChildrenUsed || r;
 	}
 
@@ -209,6 +236,7 @@ export function markUsedSetLeaves( tile, renderer ) {
 	const stats = renderer.stats;
 	const frameCount = renderer.frameCount;
 	const enabledSchedule = renderer.enabledSchedule;
+	const deferOutSideFrustum = renderer.deferOutSideFrustum;
 
 	if ( ! isUsedThisFrame( tile, frameCount ) ) {
 
@@ -219,7 +247,7 @@ export function markUsedSetLeaves( tile, renderer ) {
 	stats.used ++;
 
 	// This tile is a leaf if none of the children had been used.
-	const children = enabledSchedule ? (tile.contentChildren || []) : tile.children;
+	const children = tile.children
 	let anyChildrenUsed = false;
 	for ( let i = 0, l = children.length; i < l; i ++ ) {
 
@@ -229,7 +257,7 @@ export function markUsedSetLeaves( tile, renderer ) {
 	}
 
 
-	if ( ! anyChildrenUsed && !enabledSchedule ) {
+	if ( ! anyChildrenUsed) {
 
 		// TODO: This isn't necessarily right because it's possible that a parent tile is considered in the
 		// frustum while the child tiles are not, making them unused. If all children have loaded and were properly
@@ -247,7 +275,16 @@ export function markUsedSetLeaves( tile, renderer ) {
 			childrenWereVisible = childrenWereVisible || c.__wasSetVisible || c.__childrenWereVisible;
 
 			// 如果开启了调度加载，只需要去判断视窗内的瓦片是否全部加载
-			if ( ! enabledSchedule && isUsedThisFrame( c, frameCount ) ) {
+			if (enabledSchedule && deferOutSideFrustum) {
+				if (c.__inFrustum) {
+					const childrenLoaded = c.__allChildrenLoaded
+					|| (!c.__contentEmpty && isDownloadFinished(c.__loadingState))
+					|| (c.__externalTileSet && c.__loadingState === FAILED);
+	
+					allChildrenLoaded = allChildrenLoaded && childrenLoaded;
+				}
+			}
+			else if ( isUsedThisFrame(c, frameCount) ) {
 
 				const childrenLoaded = c.__allChildrenLoaded
 				|| (!c.__contentEmpty && isDownloadFinished(c.__loadingState))
@@ -256,13 +293,6 @@ export function markUsedSetLeaves( tile, renderer ) {
 				allChildrenLoaded = allChildrenLoaded && childrenLoaded;
 
 			}
-			else if (enabledSchedule && c.__inFrustum) {
-				const childrenLoaded = (!c.__contentEmpty && isDownloadFinished(c.__loadingState))
-				|| (c.__externalTileSet && c.__loadingState === FAILED);
-
-				allChildrenLoaded = allChildrenLoaded && childrenLoaded;
-			}
-
 
 		}
 		tile.__childrenWereVisible = childrenWereVisible;
@@ -299,8 +329,9 @@ function traversalAndCacheTiles( tile, renderer ) {
 	for ( let i = 0; i < children.length; i++ ) {
 
 		const c = children[i];
+		const hasContent = ! c.__contentEmpty || c.__externalTileSet;
 
-		if ( stats.downloading < maxJobs * 3 / 4 && !isDownloadFinished(c.__loadingState) ) {
+		if ( hasContent && !isDownloadFinished(c.__loadingState) && stats.downloading < maxJobs * 3 / 4 ) {
 
 			renderer.requestTileContents( c );
 
@@ -312,14 +343,13 @@ function traversalAndCacheTiles( tile, renderer ) {
 
 }
 
-export function requestPriorityTiles (tile, renderer, deferQueue = []) {
+export function requestPriorityTiles(tile, renderer) {
+
 	const frameCount = renderer.frameCount;
 	const stats = renderer.stats;
-	const loadDepthFromParent = renderer.loadDepthFromParent || 2;
 	const deferOutSideFrustum = renderer.deferOutSideFrustum;
+	const deferLoadDepth = renderer.deferLoadDepth;
 	const maxJobs = renderer.downloadQueue.maxJobs;
-	const foveatedScreenSpaceError = renderer.foveatedScreenSpaceError;
-	
 
 	if (!isUsedThisFrame( tile, frameCount )) {
 
@@ -327,12 +357,12 @@ export function requestPriorityTiles (tile, renderer, deferQueue = []) {
 
 	}
 
+	const deferQueue = [];
 	const tileStack = [];
 	tileStack.push(tile);
 
 	let depth = 0;
-	let touchNeedLoadedDepth = false;
-	while (tileStack.length > 0) {
+	while(tileStack.length > 0) {
 		const selectedTile = tileStack.pop();
 
 		if (!isUsedThisFrame(selectedTile, frameCount)) {
@@ -342,51 +372,47 @@ export function requestPriorityTiles (tile, renderer, deferQueue = []) {
 		}
 
 		let contentTiles = selectedTile.contentChildren || [];
-		if (contentTiles.length === 0) {
-			continue;
-		}
 
-		contentTiles = contentTiles.sort((a, b) => {
-			return a.__distanceFromCamera - b.__distanceFromCamera;
-		})
+		contentTiles.sort(priorityFunction);
 
-		if (foveatedScreenSpaceError) {
-			contentTiles = contentTiles.sort((a, b) => {
-				if (a._foveatedFactor === undefined) {
-					a._foveatedFactor = 1;
-				}
+		let usedTiles = contentTiles.filter(item => isUsedThisFrame(item, frameCount));
 
-				return a._foveatedFactor - b._foveatedFactor;
-			})
-		}
-
-		let inFrustumTiles = contentTiles;
-		let outFrustumTiles = [];
 		if (deferOutSideFrustum) {
-			inFrustumTiles = contentTiles.filter(item => item.__inFrustum);
-			outFrustumTiles = contentTiles.filter(item => !item.__inFrustum);
-		}
 
-		// 如果还有未加载的子级，先暂停后续节点加载，优先加载当前未加载子瓦片
-		const undownloadedChildren = inFrustumTiles.filter(item => !isDownloadFinished(item.__loadingState));
-		if (undownloadedChildren.length > 0 || touchNeedLoadedDepth) {
+			const inFrustumTiles = usedTiles.filter(item => item.__inFrustum);
+			const outFrustumTiles = usedTiles.filter(item => !item.__inFrustum);
+			const unloadOutFrustumTiles = outFrustumTiles.filter(item => !isDownloadFinished(item.__loadingState));
+			if (unloadOutFrustumTiles.length > 0) {
+				depth ++;
+			}
 
-			undownloadedChildren.forEach(item => renderer.requestTileContents(item));
-			touchNeedLoadedDepth = true;
-			depth++;
-
-			// 如果当前加载队列还比较空闲并且距离开始加载层级不深（比如两层，那么可以先优先加载后面的在视锥体内的瓦片）
-			if (stats.downloading >= maxJobs * 3 / 4) { break; }
+			usedTiles = inFrustumTiles;
+			deferQueue.push(...unloadOutFrustumTiles);
 
 		}
 
-		if ( depth > loadDepthFromParent ) {
+		const unloadedChildren = usedTiles.filter( item => !isDownloadFinished(item.__loadingState) );
+
+		if (unloadedChildren.length > 0) {
+			unloadedChildren.forEach(item => {
+				renderer.requestTileContents( item );
+			});
+
+			if (stats.downloading >= maxJobs * 3 / 4) {
+				break;
+			}
+		}
+
+		if (depth > deferLoadDepth && deferOutSideFrustum) {
+
 			break;
+
 		}
 
-		tileStack.push(...inFrustumTiles.reverse());
-		deferQueue.push(...outFrustumTiles)
-		
+		const allChildrenTiles = selectedTile.children;
+		allChildrenTiles.sort(priorityFunction)
+
+		tileStack.push(...allChildrenTiles.reverse());
 	}
 
 	// 若当前加载队列还比较空闲可以加载不在视锥体内的瓦片
@@ -395,10 +421,12 @@ export function requestPriorityTiles (tile, renderer, deferQueue = []) {
 		renderer.requestTileContents(deferTile);
 	}
 
-	// 优先级最低，强缓存
 	if (stats.downloading < maxJobs * 1 / 2) {
-		traversalAndCacheTiles(tile, renderer)
+
+		traversalAndCacheTiles(tile, renderer);
+
 	}
+
 }
 
 // Skip past tiles we consider unrenderable because they are outside the error threshold.
@@ -435,7 +463,7 @@ export function skipTraversal( tile, renderer ) {
 			tile.__active = true;
 			stats.active ++;
 
-		} else if ( ! lruCache.isFull() && ( ! tile.__contentEmpty || tile.__externalTileSet ) ) {
+		} else if ( ! enabledSchedule && ! lruCache.isFull() && ( ! tile.__contentEmpty || tile.__externalTileSet ) ) {
 
 			renderer.requestTileContents( tile );
 
@@ -452,7 +480,7 @@ export function skipTraversal( tile, renderer ) {
 	const hasContent = hasModel || tile.__externalTileSet;
 	const loadedContent = isDownloadFinished( tile.__loadingState ) && hasContent;
 	const childrenWereVisible = tile.__childrenWereVisible;
-	const children = enabledSchedule ? (tile.contentChildren || []) : tile.children;
+	const children = tile.children;
 	const allChildrenHaveContent = tile.__allChildrenLoaded;
 
 	// Increment the relative depth of the node to the nearest rendered parent if it has content
@@ -470,14 +498,30 @@ export function skipTraversal( tile, renderer ) {
 
 	}
 
-	let anyChildrenUsed = false;
+	if (
+		( enabledSchedule && meetsSSE && ! allChildrenHaveContent && loadedContent )
+		    || ( !enabledSchedule && meetsSSE && ! allChildrenHaveContent && ! childrenWereVisible && loadedContent )
+			|| ( tile.refine === 'ADD' && loadedContent )
+	) {
+
+		if ( tile.__inFrustum ) {
+
+			tile.__visible = true;
+			stats.visible ++;
+
+		}
+		tile.__active = true;
+		stats.active ++;
+
+	}
+
 	// If we're additive then don't stop the traversal here because it doesn't matter whether the children load in
 	// at the same rate.
-	if ( !enabledSchedule && tile.refine !== 'ADD' && meetsSSE && ! allChildrenHaveContent && loadedContent ) {
+	if ( tile.refine !== 'ADD' && meetsSSE && ! allChildrenHaveContent && loadedContent ) {
 
 		// load the child content if we've found that we've been loaded so we can move down to the next tile
 		// layer when the data has loaded.
-		for ( let i = 0, l = children.length; i < l; i ++ ) {
+		for ( let i = 0, l = children.length; (i < l && ! enabledSchedule); i ++ ) {
 
 			const c = children[ i ];
 			if ( isUsedThisFrame( c, frameCount ) && ! lruCache.isFull() ) {
@@ -491,30 +535,12 @@ export function skipTraversal( tile, renderer ) {
 
 	} else {
 
-		for ( let i = 0, l = children.length; (i < l && (!enabledSchedule || allChildrenHaveContent)); i ++ ) {
+		for ( let i = 0, l = children.length; (i < l ); i ++ ) {
 
 			const c = children[ i ];
-			anyChildrenUsed = anyChildrenUsed || isUsedThisFrame( c, frameCount );
 			skipTraversal( c, renderer );
 
 		}
-
-	}
-
-	if (
-		( enabledSchedule && meetsSSE && (! allChildrenHaveContent || ! anyChildrenUsed ) && loadedContent )
-		    || ( !enabledSchedule && meetsSSE && ! allChildrenHaveContent && ! childrenWereVisible && loadedContent )
-			|| ( tile.refine === 'ADD' && loadedContent )
-	) {
-
-		if ( tile.__inFrustum ) {
-
-			tile.__visible = true;
-			stats.visible ++;
-
-		}
-		tile.__active = true;
-		stats.active ++;
 
 	}
 
@@ -623,21 +649,53 @@ export function checkChildrenWithinParent( tile ) {
 
 }
 
-function findNearestContentTile(tile, parent = tile, isSelf = true) {
-	if (!tile.__contentEmpty && !isSelf) {
-		tile.contentParent = parent;
-		return [tile];
+function findNearestContentTile(tile, parent = tile, isSelf = true, depth = 0, depthContentTiles = {},) {
+
+	const hasModel = ! tile.__contentEmpty;
+	const isExternalTileSet = tile.__externalTileSet;
+
+	if ( hasModel && !isSelf ) {
+
+		depthContentTiles[depth] ? depthContentTiles[depth].push(tile) : depthContentTiles[depth] = [tile];
+
+	}
+	else {
+
+		depth ++;
+
+		const children = tile.children;
+		for (let i = 0, l = children.length; i < l; i++) {
+
+			const c = children[i];
+	
+			const contentChildren = findNearestContentTile(c, parent, false, depth, depthContentTiles);
+
+			if ( isExternalTileSet ) {
+
+				for ( let j = 0; j < contentChildren.length; j++ ) {
+
+					const contentChild = contentChildren[j];
+					tile.__distanceFromCamera = Math.min( tile.__distanceFromCamera, contentChild.__distanceFromCamera );
+					
+				}
+
+			}
+
+		}
+
 	}
 
-	let nearestContentTiles = [];
-	for (let i = 0; i < tile.children.length; i++) {
-		const c = tile.children[i];
-		const contentTile = findNearestContentTile(c, parent, false);
+	const keys = Object.keys(depthContentTiles);
+	const firstKey = keys[0];
+	let contentTiles = [];
 
-		nearestContentTiles.push(...contentTile);
+	if (keys[0]) {
+
+		contentTiles = depthContentTiles[firstKey];
+
 	}
 
-	return nearestContentTiles;
+	return contentTiles;
 }
 
 export function buildContentTree(tile, renderer) {
@@ -656,18 +714,14 @@ export function buildContentTree(tile, renderer) {
 
 	}
 
-	const children = tile.contentChildren || tile.children;
+	const children = tile.children;
 
 	for (let i = 0; i < children.length; i++) {
 		
 		const c = children[i];
 
-		if ( ! c.__contentEmpty ) {
-
-			c.contentChildren = findNearestContentTile(c);
-			buildContentTree(c, renderer);
-
-		}
+		c.contentChildren = findNearestContentTile(c);
+		buildContentTree(c, renderer);
 
 	}
 

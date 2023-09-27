@@ -131,6 +131,7 @@ export class TilesRendererBase {
 		this.deferOutSideFrustum = false;
 		this.cacheDepth = 8;
 		this.maxCacheChildren = 100;
+		this.deferLoadDepth = 2;
 
 	}
 
