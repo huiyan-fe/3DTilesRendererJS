@@ -10,17 +10,17 @@ function priorityFunction ( a, b ) {
 
 	if ( a.__inFrustum !== b.__inFrustum ) {
 
-		return a.__inFrustum ? 1 : - 1;
+		return a.__inFrustum ? -1 : 1;
 
 	} 
 	else if ( a.__distanceFromCamera !== b.__distanceFromCamera ) {
 
-		return a.__distanceFromCamera > b.__distanceFromCamera ? - 1 : 1;
+		return a.__distanceFromCamera - b.__distanceFromCamera;
 
 	}
 	else if (a._foveatedFactor !== b._foveatedFactor) {
 
-		return a._foveatedFactor > b._foveatedFactor ? -1 : 1;
+		return a._foveatedFactor - b._foveatedFactor;
 	}
 
 	return 0;
